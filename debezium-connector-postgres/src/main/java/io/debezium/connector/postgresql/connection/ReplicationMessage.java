@@ -186,6 +186,10 @@ public interface ReplicationMessage {
         return getOperation() == Operation.BEGIN || getOperation() == Operation.COMMIT;
     }
 
+    default boolean isFiltered() {
+        return false;
+    }
+
     /**
      * A special message type that is used to replace event filtered already at {@link MessageDecoder}.
      * Enables {@link PostgresStreamingChangeEventSource} to advance LSN forward even in case of such messages.

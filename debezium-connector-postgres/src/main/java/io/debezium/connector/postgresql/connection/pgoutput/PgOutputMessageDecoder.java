@@ -12,6 +12,7 @@ import java.nio.charset.Charset;
 import java.sql.DatabaseMetaData;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
@@ -24,8 +25,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 
+import io.debezium.util.Clock;
+import io.debezium.util.ElapsedTimeStrategy;
 import org.postgresql.replication.fluent.logical.ChainedLogicalStreamBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -66,11 +70,19 @@ public class PgOutputMessageDecoder extends AbstractMessageDecoder {
     private static final Logger LOGGER = LoggerFactory.getLogger(PgOutputMessageDecoder.class);
     private static final Instant PG_EPOCH = LocalDate.of(2000, 1, 1).atStartOfDay().toInstant(ZoneOffset.UTC);
     private static final byte SPACE = 32;
+    private static final Duration INITIAL_POLL_PERIOD_IN_MILLIS = Duration.ofMillis(TimeUnit.SECONDS.toMillis(5));
+    private static final Duration MAX_POLL_PERIOD_IN_MILLIS = Duration.ofMillis(TimeUnit.HOURS.toMillis(1));
 
+    private final Clock clock = Clock.system();
     private final MessageDecoderContext decoderContext;
     private final PostgresConnection connection;
 
+
     private Instant commitTimestamp;
+    private final ElapsedTimeStrategy noOpCountOutputStrategy;
+    private Instant noOpCountOutputInstant;
+
+    private int noOpMessageCountBatchSize;
 
     /**
      * Will be null for a non-transactional decoding message
@@ -120,6 +132,8 @@ public class PgOutputMessageDecoder extends AbstractMessageDecoder {
     public PgOutputMessageDecoder(MessageDecoderContext decoderContext, PostgresConnection connection) {
         this.decoderContext = decoderContext;
         this.connection = connection;
+        noOpCountOutputStrategy = ElapsedTimeStrategy.exponential(clock, INITIAL_POLL_PERIOD_IN_MILLIS, MAX_POLL_PERIOD_IN_MILLIS);
+        noOpCountOutputInstant = clock.currentTimeAsInstant();
     }
 
     @Override
@@ -407,6 +421,18 @@ public class PgOutputMessageDecoder extends AbstractMessageDecoder {
         return false;
     }
 
+    private void logNoOpMessagesCount() {
+        noOpMessageCountBatchSize += 1;
+        if (noOpCountOutputStrategy.hasElapsed()) {
+            // We want to record the status ...
+            final Instant currentTime = clock.currentTime();
+            LOGGER.info("{} records No-Op messages skipped during previous {}", noOpMessageCountBatchSize,
+                    Strings.duration(Duration.between(noOpCountOutputInstant, currentTime).toMillis()));
+
+            noOpCountOutputInstant = currentTime;
+            noOpMessageCountBatchSize = 0;
+        }
+    }
     /**
      * Callback handler for the 'I' insert replication stream message.
      *
@@ -421,10 +447,18 @@ public class PgOutputMessageDecoder extends AbstractMessageDecoder {
         LOGGER.trace("Event: {}, Relation Id: {}, Tuple Type: {}", MessageType.INSERT, relationId, tupleType);
 
         Optional<Table> resolvedTable = resolveRelation(relationId);
-
+//        logNoOpMessagesCount();
         // non-captured table
         if (!resolvedTable.isPresent()) {
-            processor.process(new NoopMessage(transactionId, commitTimestamp));
+            //processor.process(new NoopMessage(transactionId, commitTimestamp));
+            processor.process(new PgOutputReplicationMessage(
+                    Operation.INSERT,
+                    null,
+                    commitTimestamp,
+                    transactionId,
+                    null,
+                    null,
+                    true));
         }
         else {
             Table table = resolvedTable.get();
@@ -455,7 +489,16 @@ public class PgOutputMessageDecoder extends AbstractMessageDecoder {
 
         // non-captured table
         if (!resolvedTable.isPresent()) {
-            processor.process(new NoopMessage(transactionId, commitTimestamp));
+//            logNoOpMessagesCount();
+//            processor.process(new NoopMessage(transactionId, commitTimestamp));
+            processor.process(new PgOutputReplicationMessage(
+                    Operation.UPDATE,
+                    null,
+                    commitTimestamp,
+                    transactionId,
+                    null,
+                    null,
+                    true));
         }
         else {
             Table table = resolvedTable.get();
@@ -504,7 +547,16 @@ public class PgOutputMessageDecoder extends AbstractMessageDecoder {
 
         // non-captured table
         if (!resolvedTable.isPresent()) {
+//            logNoOpMessagesCount();
             processor.process(new NoopMessage(transactionId, commitTimestamp));
+            processor.process(new PgOutputReplicationMessage(
+                    Operation.DELETE,
+                    null,
+                    commitTimestamp,
+                    transactionId,
+                    null,
+                    null,
+                    true));
         }
         else {
             Table table = resolvedTable.get();

@@ -69,7 +69,9 @@ public class PostgresChangeRecordEmitter extends RelationalChangeRecordEmitter<P
         this.connection = connection;
 
         this.tableId = tableId;
-        Objects.requireNonNull(this.tableId);
+        if (!message.isFiltered()) {
+            Objects.requireNonNull(this.tableId);
+        }
     }
 
     @Override
@@ -86,6 +88,11 @@ public class PostgresChangeRecordEmitter extends RelationalChangeRecordEmitter<P
             default:
                 throw new IllegalArgumentException("Received event of unexpected command type: " + message.getOperation());
         }
+    }
+
+    @Override
+    public boolean shouldFilterMessage() {
+        return message.isFiltered();
     }
 
     @Override
