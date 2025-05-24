@@ -9,11 +9,13 @@ package io.debezium.connector.postgresql;
 import java.nio.charset.Charset;
 import java.sql.SQLException;
 import java.time.Duration;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
 
+import io.debezium.connector.base.DefaultChangeEventQueueDelegate;
 import org.apache.kafka.clients.producer.RecordMetadata;
 import org.apache.kafka.connect.errors.ConnectException;
 import org.apache.kafka.connect.errors.RetriableException;
@@ -168,11 +170,17 @@ public class PostgresConnectorTask extends BaseSourceTask<PostgresPartition, Pos
                 throw new DebeziumException(e);
             }
 
+            Map<String, String> delegateProps = new HashMap<>();
+            // TODO: add batch size, queue size to delegateProps
+            // .maxBatchSize(connectorConfig.getMaxBatchSize())
+            //  .maxQueueSize(connectorConfig.getMaxQueueSize())
+            //  .maxQueueSizeInBytes(connectorConfig.getMaxQueueSizeInBytes())
+            DefaultChangeEventQueueDelegate<DataChangeEvent> delegate = new DefaultChangeEventQueueDelegate<>();
+            delegate.configure(delegateProps);
+
             queue = new ChangeEventQueue.Builder<DataChangeEvent>()
                     .pollInterval(connectorConfig.getPollInterval())
-                    .maxBatchSize(connectorConfig.getMaxBatchSize())
-                    .maxQueueSize(connectorConfig.getMaxQueueSize())
-                    .maxQueueSizeInBytes(connectorConfig.getMaxQueueSizeInBytes())
+                    .queueDelegate(delegate)
                     .loggingContextSupplier(() -> taskContext.configureLoggingContext(CONTEXT_NAME))
                     .build();
 

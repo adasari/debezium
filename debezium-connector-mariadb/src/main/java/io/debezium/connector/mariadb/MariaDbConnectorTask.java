@@ -177,9 +177,9 @@ public class MariaDbConnectorTask extends BinlogSourceTask<MariaDbPartition, Mar
         // Set up the task record queue ...
         this.queue = new ChangeEventQueue.Builder<DataChangeEvent>()
                 .pollInterval(connectorConfig.getPollInterval())
-                .maxBatchSize(connectorConfig.getMaxBatchSize())
-                .maxQueueSize(connectorConfig.getMaxQueueSize())
-                .maxQueueSizeInBytes(connectorConfig.getMaxQueueSizeInBytes())
+//                .maxBatchSize(connectorConfig.getMaxBatchSize())
+//                .maxQueueSize(connectorConfig.getMaxQueueSize())
+//                .maxQueueSizeInBytes(connectorConfig.getMaxQueueSizeInBytes())
                 .loggingContextSupplier(() -> taskContext.configureLoggingContext(CONTEXT_NAME))
                 .buffering()
                 .build();

@@ -5,25 +5,6 @@
  */
 package io.debezium.connector.base;
 
-import static io.debezium.util.Loggings.maybeRedactSensitiveData;
-
-import java.time.Duration;
-import java.util.ArrayDeque;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Queue;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicReference;
-import java.util.concurrent.locks.Condition;
-import java.util.concurrent.locks.Lock;
-import java.util.concurrent.locks.ReentrantLock;
-import java.util.function.Function;
-import java.util.function.Supplier;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import io.debezium.annotation.SingleThreadAccess;
 import io.debezium.annotation.ThreadSafe;
 import io.debezium.config.ConfigurationDefaults;
@@ -34,6 +15,16 @@ import io.debezium.util.LoggingContext;
 import io.debezium.util.LoggingContext.PreviousContext;
 import io.debezium.util.Threads;
 import io.debezium.util.Threads.Timer;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.time.Duration;
+import java.util.*;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Function;
+import java.util.function.Supplier;
+
+import static io.debezium.util.Loggings.maybeRedactSensitiveData;
 
 /**
  * A queue which serves as handover point between producer threads (e.g. MySQL's
@@ -62,93 +53,76 @@ import io.debezium.util.Threads.Timer;
  */
 @ThreadSafe
 public class ChangeEventQueue<T extends Sizeable> implements ChangeEventQueueMetrics {
-
+    // TODO: Introduce new metrics to replace ChangeEventQueueMetrics, enabling support for different queue delegate types
     private static final Logger LOGGER = LoggerFactory.getLogger(ChangeEventQueue.class);
 
+    private final ChangeEventQueueDelegate<T> delegate;
     private final Duration pollInterval;
-    private final int maxBatchSize;
-    private final int maxQueueSize;
-    private final long maxQueueSizeInBytes;
-
-    private final Lock lock;
-    private final Condition isFull;
-    private final Condition isNotFull;
-
-    private final Queue<T> queue;
     private final Supplier<PreviousContext> loggingContextSupplier;
-    private final Queue<Long> sizeInBytesQueue;
-    private long currentQueueSizeInBytes = 0;
 
-    // Sometimes it is necessary to update the record before it is delivered depending on the content
-    // of the following record. In that cases the easiest solution is to provide a single cell buffer
-    // that will allow the modification of it during the explicit flush.
-    // Typical example is MySQL connector when sometimes it is impossible to detect when the record
-    // in process is the last one. In this case the snapshot flags are set during the explicit flush.
     @SingleThreadAccess("producer thread")
     private boolean buffering;
-
     private final AtomicReference<T> bufferedEvent = new AtomicReference<>();
 
     private volatile RuntimeException producerException;
 
-    private ChangeEventQueue(Duration pollInterval, int maxQueueSize, int maxBatchSize, Supplier<LoggingContext.PreviousContext> loggingContextSupplier,
-                             long maxQueueSizeInBytes, boolean buffering) {
+    private ChangeEventQueue(Duration pollInterval, Supplier<LoggingContext.PreviousContext> loggingContextSupplier,
+                             ChangeEventQueueDelegate<T> delegate, boolean buffering) {
         this.pollInterval = pollInterval;
-        this.maxBatchSize = maxBatchSize;
-        this.maxQueueSize = maxQueueSize;
-
-        this.lock = new ReentrantLock();
-        this.isFull = lock.newCondition();
-        this.isNotFull = lock.newCondition();
-
-        this.queue = new ArrayDeque<>(maxQueueSize);
+        this.delegate = delegate;
         this.loggingContextSupplier = loggingContextSupplier;
-        this.sizeInBytesQueue = new ArrayDeque<>(maxQueueSize);
-        this.maxQueueSizeInBytes = maxQueueSizeInBytes;
         this.buffering = buffering;
+    }
+
+    @Override
+    public int totalCapacity() {
+        return 0;
+    }
+
+    @Override
+    public int remainingCapacity() {
+        return 0;
+    }
+
+    @Override
+    public long maxQueueSizeInBytes() {
+        return 0;
+    }
+
+    @Override
+    public long currentQueueSizeInBytes() {
+        return 0;
     }
 
     public static class Builder<T extends Sizeable> {
 
         private Duration pollInterval;
-        private int maxQueueSize;
-        private int maxBatchSize;
         private Supplier<LoggingContext.PreviousContext> loggingContextSupplier;
-        private long maxQueueSizeInBytes;
         private boolean buffering;
+        private ChangeEventQueueDelegate<T> delegate;
 
-        public Builder<T> pollInterval(Duration pollInterval) {
+        public ChangeEventQueue.Builder<T> pollInterval(Duration pollInterval) {
             this.pollInterval = pollInterval;
             return this;
         }
 
-        public Builder<T> maxQueueSize(int maxQueueSize) {
-            this.maxQueueSize = maxQueueSize;
-            return this;
-        }
-
-        public Builder<T> maxBatchSize(int maxBatchSize) {
-            this.maxBatchSize = maxBatchSize;
-            return this;
-        }
-
-        public Builder<T> loggingContextSupplier(Supplier<LoggingContext.PreviousContext> loggingContextSupplier) {
+        public ChangeEventQueue.Builder<T> loggingContextSupplier(Supplier<LoggingContext.PreviousContext> loggingContextSupplier) {
             this.loggingContextSupplier = loggingContextSupplier;
             return this;
         }
 
-        public Builder<T> maxQueueSizeInBytes(long maxQueueSizeInBytes) {
-            this.maxQueueSizeInBytes = maxQueueSizeInBytes;
-            return this;
-        }
-
-        public Builder<T> buffering() {
+        public ChangeEventQueue.Builder<T> buffering() {
             this.buffering = true;
             return this;
         }
 
+        public ChangeEventQueue.Builder<T> queueDelegate(ChangeEventQueueDelegate<T> delegate) {
+            this.delegate = delegate;
+            return this;
+        }
+
         public ChangeEventQueue<T> build() {
-            return new ChangeEventQueue<T>(pollInterval, maxQueueSize, maxBatchSize, loggingContextSupplier, maxQueueSizeInBytes, buffering);
+            return new ChangeEventQueue<T>(pollInterval, loggingContextSupplier, delegate, buffering);
         }
     }
 
@@ -216,33 +190,7 @@ public class ChangeEventQueue<T extends Sizeable> implements ChangeEventQueueMet
             LOGGER.trace("Enqueuing source record '{}'", maybeRedactSensitiveData(record));
         }
 
-        try {
-            this.lock.lock();
-
-            while (queue.size() >= maxQueueSize || (maxQueueSizeInBytes > 0 && currentQueueSizeInBytes >= maxQueueSizeInBytes)) {
-                // signal poll() to drain queue
-                this.isFull.signalAll();
-                // queue size or queue sizeInBytes threshold reached, so wait a bit
-                this.isNotFull.await(pollInterval.toMillis(), TimeUnit.MILLISECONDS);
-            }
-
-            queue.add(record);
-            // If we pass a positiveLong max.queue.size.in.bytes to enable handling queue size in bytes feature
-            if (maxQueueSizeInBytes > 0) {
-                long messageSize = record.objectSize();
-                sizeInBytesQueue.add(messageSize);
-                currentQueueSizeInBytes += messageSize;
-            }
-
-            // batch size or queue sizeInBytes threshold reached
-            if (queue.size() >= maxBatchSize || (maxQueueSizeInBytes > 0 && currentQueueSizeInBytes >= maxQueueSizeInBytes)) {
-                // signal poll() to start draining queue and do not wait
-                this.isFull.signalAll();
-            }
-        }
-        finally {
-            this.lock.unlock();
-        }
+        delegate.enqueue(record);
     }
 
     /**
@@ -255,61 +203,14 @@ public class ChangeEventQueue<T extends Sizeable> implements ChangeEventQueueMet
      */
     public List<T> poll() throws InterruptedException {
         LoggingContext.PreviousContext previousContext = loggingContextSupplier.get();
-
         try {
             LOGGER.debug("polling records...");
             final Timer timeout = Threads.timer(Clock.SYSTEM, Temporals.min(pollInterval, ConfigurationDefaults.RETURN_CONTROL_INTERVAL));
-            try {
-                this.lock.lock();
-                List<T> records = new ArrayList<>(Math.min(maxBatchSize, queue.size()));
-                throwProducerExceptionIfPresent();
-                while (drainRecords(records, maxBatchSize - records.size()) < maxBatchSize
-                        && (maxQueueSizeInBytes == 0 || currentQueueSizeInBytes < maxQueueSizeInBytes)
-                        && !timeout.expired()) {
-                    throwProducerExceptionIfPresent();
-
-                    LOGGER.debug("no records available or batch size not reached yet, sleeping a bit...");
-                    long remainingTimeoutMills = timeout.remaining().toMillis();
-                    if (remainingTimeoutMills > 0) {
-                        // signal doEnqueue() to add more records
-                        this.isNotFull.signalAll();
-                        // no records available or batch size not reached yet, so wait a bit
-                        this.isFull.await(remainingTimeoutMills, TimeUnit.MILLISECONDS);
-                    }
-                    LOGGER.debug("checking for more records...");
-                }
-                // signal doEnqueue() to add more records
-                this.isNotFull.signalAll();
-                return records;
-            }
-            finally {
-                this.lock.unlock();
-            }
+            return null;
         }
         finally {
             previousContext.restore();
         }
-    }
-
-    private long drainRecords(List<T> records, int maxElements) {
-        int queueSize = queue.size();
-        if (queueSize == 0) {
-            return records.size();
-        }
-        int recordsToDrain = Math.min(queueSize, maxElements);
-        T[] drainedRecords = (T[]) new Sizeable[recordsToDrain];
-        for (int i = 0; i < recordsToDrain; i++) {
-            T record = queue.poll();
-            drainedRecords[i] = record;
-        }
-        if (maxQueueSizeInBytes > 0) {
-            for (int i = 0; i < recordsToDrain; i++) {
-                Long objectSize = sizeInBytesQueue.poll();
-                currentQueueSizeInBytes -= (objectSize == null ? 0L : objectSize);
-            }
-        }
-        records.addAll(Arrays.asList(drainedRecords));
-        return records.size();
     }
 
     public void producerException(final RuntimeException producerException) {
@@ -320,26 +221,6 @@ public class ChangeEventQueue<T extends Sizeable> implements ChangeEventQueueMet
         if (producerException != null) {
             throw producerException;
         }
-    }
-
-    @Override
-    public int totalCapacity() {
-        return maxQueueSize;
-    }
-
-    @Override
-    public int remainingCapacity() {
-        return maxQueueSize - queue.size();
-    }
-
-    @Override
-    public long maxQueueSizeInBytes() {
-        return maxQueueSizeInBytes;
-    }
-
-    @Override
-    public long currentQueueSizeInBytes() {
-        return currentQueueSizeInBytes;
     }
 
     public boolean isBuffered() {
