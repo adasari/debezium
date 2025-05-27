@@ -6,10 +6,12 @@
 
 package io.debezium.connector.postgresql;
 
+import java.lang.reflect.InvocationTargetException;
 import java.nio.charset.Charset;
 import java.sql.SQLException;
 import java.time.Duration;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.locks.ReentrantLock;
@@ -170,19 +172,31 @@ public class PostgresConnectorTask extends BaseSourceTask<PostgresPartition, Pos
                 throw new DebeziumException(e);
             }
 
-            Map<String, String> delegateProps = new HashMap<>();
-            // TODO: add batch size, queue size to delegateProps
-            // .maxBatchSize(connectorConfig.getMaxBatchSize())
-            //  .maxQueueSize(connectorConfig.getMaxQueueSize())
-            //  .maxQueueSizeInBytes(connectorConfig.getMaxQueueSizeInBytes())
-            DefaultChangeEventQueueDelegate<DataChangeEvent> delegate = new DefaultChangeEventQueueDelegate<>();
-            delegate.configure(delegateProps);
+            String changeEventQueueName = config.getString("change.event.queue.name", "default");
+            try {
+                Class<?> clazz = Class.forName(config.getString("change.event.queue." + changeEventQueueName + ".class", "io.debezium.connector.base.DefaultChangeEventQueueDelegate"));
+                @SuppressWarnings("unchecked")
+                DefaultChangeEventQueueDelegate<DataChangeEvent> delegate =
+                        (DefaultChangeEventQueueDelegate<DataChangeEvent>) clazz.getDeclaredConstructor().newInstance();
+                Map<String, Object> delegateProps = new LinkedHashMap<>();
+                String prefix = "change.event.queue." + changeEventQueueName + ".";
+                for (Map.Entry<String, String> entry : config.asMap().entrySet()) {
+                    if (entry.getKey().startsWith(prefix)) {
+                        String subKey = entry.getKey().substring(prefix.length());
+                        delegateProps.put(subKey, entry.getValue());
+                    }
+                }
+                delegate.configure(delegateProps);
 
-            queue = new ChangeEventQueue.Builder<DataChangeEvent>()
-                    .pollInterval(connectorConfig.getPollInterval())
-                    .queueDelegate(delegate)
-                    .loggingContextSupplier(() -> taskContext.configureLoggingContext(CONTEXT_NAME))
-                    .build();
+                queue = new ChangeEventQueue.Builder<DataChangeEvent>()
+                        .pollInterval(connectorConfig.getPollInterval())
+                        .queueDelegate(delegate)
+                        .loggingContextSupplier(() -> taskContext.configureLoggingContext(CONTEXT_NAME))
+                        .build();
+            } catch (ClassNotFoundException | IllegalAccessException | InstantiationException |
+                     InvocationTargetException | NoSuchMethodException e) {
+                throw new DebeziumException(e);
+            }
 
             errorHandler = new PostgresErrorHandler(connectorConfig, queue, errorHandler);
 
