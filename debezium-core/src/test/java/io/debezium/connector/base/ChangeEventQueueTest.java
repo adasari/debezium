@@ -11,9 +11,12 @@ import java.time.Duration;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Properties;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
+import io.debezium.config.CommonConnectorConfig;
+import io.debezium.config.Configuration;
 import org.apache.kafka.connect.data.Schema;
 import org.apache.kafka.connect.data.SchemaBuilder;
 import org.apache.kafka.connect.data.Struct;
@@ -68,12 +71,13 @@ public class ChangeEventQueueTest {
 
     @Before
     public void setup() {
-        ChangeEventQueue<DataChangeEvent> queue = new ChangeEventQueue.Builder<DataChangeEvent>()
-                .maxBatchSize(8192)
-                .maxQueueSize(8192 * 2)
-                .loggingContextSupplier(() -> LoggingContext.forConnector("a", "b", "c"))
-                .pollInterval(Duration.ofMillis(500))
-                .build();
+        Properties props = new Properties();
+        props.put(CommonConnectorConfig.MAX_BATCH_SIZE, 8192);
+        props.put(CommonConnectorConfig.MAX_QUEUE_SIZE, 8192 * 2);
+        props.put(CommonConnectorConfig.POLL_INTERVAL_MS, 500);
+        ChangeEventQueue<DataChangeEvent> queue =
+                new DefaultChangeEventQueue<>(Configuration.from(props), () -> LoggingContext.forConnector("a", "b", "c"));
+
         for (int i = 0; i < noOfWriters; i++) {
             writers[i] = getWriter(queue, noOfEventsPerWriter);
         }
@@ -118,7 +122,7 @@ public class ChangeEventQueueTest {
         return new Thread(() -> {
             for (int i = 0; i < noOfEvents; i++) {
                 try {
-                    queue.doEnqueue(EVENT);
+                    queue.enqueue(EVENT);
                 }
                 catch (InterruptedException ex) {
                     // exit thread

@@ -13,6 +13,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import io.debezium.connector.base.DefaultChangeEventQueue;
 import org.apache.kafka.connect.data.Schema;
 import org.apache.kafka.connect.source.SourceRecord;
 import org.slf4j.Logger;
@@ -95,13 +96,7 @@ public final class MongoDbConnectorTask extends BaseSourceTask<MongoDbPartition,
 
         try {
 
-            this.queue = new ChangeEventQueue.Builder<DataChangeEvent>()
-                    .pollInterval(connectorConfig.getPollInterval())
-                    .maxBatchSize(connectorConfig.getMaxBatchSize())
-                    .maxQueueSize(connectorConfig.getMaxQueueSize())
-                    .maxQueueSizeInBytes(connectorConfig.getMaxQueueSizeInBytes())
-                    .loggingContextSupplier(() -> taskContext.configureLoggingContext(CONTEXT_NAME))
-                    .build();
+            this.queue = new DefaultChangeEventQueue<>(connectorConfig.getConfig(), () -> taskContext.configureLoggingContext(CONTEXT_NAME));
 
             errorHandler = new MongoDbErrorHandler(connectorConfig, queue, errorHandler);
 

@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+import io.debezium.connector.base.DefaultChangeEventQueue;
 import org.apache.kafka.connect.source.SourceRecord;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -175,14 +176,8 @@ public class MariaDbConnectorTask extends BinlogSourceTask<MariaDbPartition, Mar
         taskContext = new MariaDbTaskContext(connectorConfig, schema);
 
         // Set up the task record queue ...
-        this.queue = new ChangeEventQueue.Builder<DataChangeEvent>()
-                .pollInterval(connectorConfig.getPollInterval())
-                .maxBatchSize(connectorConfig.getMaxBatchSize())
-                .maxQueueSize(connectorConfig.getMaxQueueSize())
-                .maxQueueSizeInBytes(connectorConfig.getMaxQueueSizeInBytes())
-                .loggingContextSupplier(() -> taskContext.configureLoggingContext(CONTEXT_NAME))
-                .buffering()
-                .build();
+        this.queue = new DefaultChangeEventQueue<>(connectorConfig.getConfig(), () -> taskContext.configureLoggingContext(CONTEXT_NAME));
+        this.queue.enableBuffering();
 
         errorHandler = new MariaDbErrorHandler(connectorConfig, queue, errorHandler);
 

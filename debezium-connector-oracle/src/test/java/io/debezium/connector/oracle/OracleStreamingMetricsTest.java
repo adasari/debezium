@@ -5,8 +5,7 @@
  */
 package io.debezium.connector.oracle;
 
-import static io.debezium.config.CommonConnectorConfig.DEFAULT_MAX_BATCH_SIZE;
-import static io.debezium.config.CommonConnectorConfig.DEFAULT_MAX_QUEUE_SIZE;
+import static io.debezium.config.CommonConnectorConfig.*;
 import static org.mockito.Mockito.mock;
 
 import java.time.Clock;
@@ -14,7 +13,11 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
+import java.util.Properties;
 
+import io.debezium.config.CommonConnectorConfig;
+import io.debezium.connector.base.DefaultChangeEventQueue;
+import io.debezium.util.LoggingContext;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.rules.TestRule;
@@ -47,11 +50,10 @@ public abstract class OracleStreamingMetricsTest<T extends AbstractOracleStreami
     protected void init(Configuration.Builder builder) {
         this.connectorConfig = new OracleConnectorConfig(builder.build());
 
-        final ChangeEventQueue<DataChangeEvent> queue = new ChangeEventQueue.Builder<DataChangeEvent>()
-                .pollInterval(Duration.of(DEFAULT_MAX_QUEUE_SIZE, ChronoUnit.MILLIS))
-                .maxBatchSize(DEFAULT_MAX_BATCH_SIZE)
-                .maxQueueSize(DEFAULT_MAX_QUEUE_SIZE)
-                .build();
+        Properties props = new Properties();
+        props.put(CommonConnectorConfig.MAX_BATCH_SIZE, DEFAULT_MAX_BATCH_SIZE);
+        props.put(CommonConnectorConfig.MAX_QUEUE_SIZE, DEFAULT_MAX_QUEUE_SIZE);
+        final ChangeEventQueue<DataChangeEvent> queue = new DefaultChangeEventQueue<>(Configuration.from(props), () -> LoggingContext.forConnector("a", "b", "c"));
 
         final OracleTaskContext taskContext = mock(OracleTaskContext.class);
         Mockito.when(taskContext.getConnectorName()).thenReturn("connector name");

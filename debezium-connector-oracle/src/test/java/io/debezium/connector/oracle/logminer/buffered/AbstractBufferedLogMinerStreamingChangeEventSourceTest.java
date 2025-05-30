@@ -19,7 +19,11 @@ import java.sql.SQLException;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.Properties;
 
+import io.debezium.config.CommonConnectorConfig;
+import io.debezium.connector.base.DefaultChangeEventQueue;
+import io.debezium.util.LoggingContext;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;
@@ -602,11 +606,10 @@ public abstract class AbstractBufferedLogMinerStreamingChangeEventSourceTest ext
         final OracleConnectorConfig connectorConfig = new OracleConnectorConfig(getConfig().build());
         final OracleTaskContext taskContext = new OracleTaskContext(connectorConfig, schema);
 
-        final ChangeEventQueue<DataChangeEvent> queue = new ChangeEventQueue.Builder<DataChangeEvent>()
-                .pollInterval(Duration.of(DEFAULT_MAX_QUEUE_SIZE, ChronoUnit.MILLIS))
-                .maxBatchSize(DEFAULT_MAX_BATCH_SIZE)
-                .maxQueueSize(DEFAULT_MAX_QUEUE_SIZE)
-                .build();
+        Properties props = new Properties();
+        props.put(CommonConnectorConfig.MAX_BATCH_SIZE, DEFAULT_MAX_BATCH_SIZE);
+        props.put(CommonConnectorConfig.MAX_QUEUE_SIZE, DEFAULT_MAX_QUEUE_SIZE);
+        final ChangeEventQueue<DataChangeEvent> queue = new DefaultChangeEventQueue<>(Configuration.from(props), () -> LoggingContext.forConnector("a", "b", "c"));
 
         return new LogMinerStreamingChangeEventSourceMetrics(taskContext, queue, null, connectorConfig);
     }

@@ -11,8 +11,12 @@ import static io.debezium.config.CommonConnectorConfig.DEFAULT_MAX_QUEUE_SIZE_IN
 
 import java.time.Duration;
 import java.util.Collections;
+import java.util.Properties;
 import java.util.concurrent.TimeUnit;
 
+import io.debezium.config.CommonConnectorConfig;
+import io.debezium.config.Configuration;
+import io.debezium.connector.base.DefaultChangeEventQueue;
 import org.apache.kafka.connect.data.Schema;
 import org.apache.kafka.connect.source.SourceRecord;
 import org.openjdk.jmh.annotations.Benchmark;
@@ -54,11 +58,13 @@ public class ChangeEventQueuePerf {
 
         @Setup(Level.Trial)
         public void setup() {
-            changeEventQueue = new ChangeEventQueue.Builder<DataChangeEvent>()
-                    .pollInterval(Duration.ofMillis(pollIntervalMillis))
-                    .maxQueueSize(DEFAULT_MAX_QUEUE_SIZE).maxBatchSize(DEFAULT_MAX_BATCH_SIZE)
-                    .loggingContextSupplier(() -> LoggingContext.forConnector("a", "b", "c"))
-                    .maxQueueSizeInBytes(DEFAULT_MAX_QUEUE_SIZE_IN_BYTES).build();
+            Properties props = new Properties();
+            props.put(CommonConnectorConfig.MAX_BATCH_SIZE, DEFAULT_MAX_BATCH_SIZE);
+            props.put(CommonConnectorConfig.MAX_QUEUE_SIZE, DEFAULT_MAX_QUEUE_SIZE);
+            props.put(CommonConnectorConfig.POLL_INTERVAL_MS, pollIntervalMillis);
+            props.put(CommonConnectorConfig.MAX_QUEUE_SIZE_IN_BYTES, DEFAULT_MAX_QUEUE_SIZE_IN_BYTES);
+
+            changeEventQueue = new DefaultChangeEventQueue<>(Configuration.from(props), () -> LoggingContext.forConnector("a", "b", "c"));
             consumer = new Thread(() -> {
                 try {
                     while (true) {
@@ -103,11 +109,13 @@ public class ChangeEventQueuePerf {
 
         @Setup(Level.Trial)
         public void setup() {
-            changeEventQueue = new ChangeEventQueue.Builder<DataChangeEvent>()
-                    .pollInterval(Duration.ofMillis(pollIntervalMillis))
-                    .maxQueueSize(DEFAULT_MAX_QUEUE_SIZE).maxBatchSize(DEFAULT_MAX_BATCH_SIZE)
-                    .loggingContextSupplier(() -> LoggingContext.forConnector("a", "b", "c"))
-                    .maxQueueSizeInBytes(DEFAULT_MAX_QUEUE_SIZE_IN_BYTES).build();
+            Properties props = new Properties();
+            props.put(CommonConnectorConfig.MAX_BATCH_SIZE, DEFAULT_MAX_BATCH_SIZE);
+            props.put(CommonConnectorConfig.MAX_QUEUE_SIZE, DEFAULT_MAX_QUEUE_SIZE);
+            props.put(CommonConnectorConfig.POLL_INTERVAL_MS, pollIntervalMillis);
+            props.put(CommonConnectorConfig.MAX_QUEUE_SIZE_IN_BYTES, DEFAULT_MAX_QUEUE_SIZE_IN_BYTES);
+
+            changeEventQueue = new DefaultChangeEventQueue<>(Configuration.from(props), () -> LoggingContext.forConnector("a", "b", "c"));
             producer = new Thread(() -> {
                 try {
                     for (;;) {
@@ -154,11 +162,13 @@ public class ChangeEventQueuePerf {
 
         @Setup(Level.Trial)
         public void setupInvocation() {
-            changeEventQueue = new ChangeEventQueue.Builder<DataChangeEvent>()
-                    .pollInterval(Duration.ofMillis(pollIntervalMillis))
-                    .maxQueueSize(DEFAULT_MAX_QUEUE_SIZE).maxBatchSize(DEFAULT_MAX_BATCH_SIZE)
-                    .loggingContextSupplier(() -> LoggingContext.forConnector("a", "b", "c"))
-                    .maxQueueSizeInBytes(DEFAULT_MAX_QUEUE_SIZE_IN_BYTES).build();
+            Properties props = new Properties();
+            props.put(CommonConnectorConfig.MAX_BATCH_SIZE, DEFAULT_MAX_BATCH_SIZE);
+            props.put(CommonConnectorConfig.MAX_QUEUE_SIZE, DEFAULT_MAX_QUEUE_SIZE);
+            props.put(CommonConnectorConfig.POLL_INTERVAL_MS, pollIntervalMillis);
+            props.put(CommonConnectorConfig.MAX_QUEUE_SIZE_IN_BYTES, DEFAULT_MAX_QUEUE_SIZE_IN_BYTES);
+
+            changeEventQueue = new DefaultChangeEventQueue<>(Configuration.from(props), () -> LoggingContext.forConnector("a", "b", "c"));
         }
 
         @Setup(Level.Invocation)
@@ -228,11 +238,13 @@ public class ChangeEventQueuePerf {
 
         @Setup(Level.Trial)
         public void setupInvocation() {
-            changeEventQueue = new ChangeEventQueue.Builder<DataChangeEvent>()
-                    .pollInterval(Duration.ofMillis(pollIntervalMillis))
-                    .maxQueueSize(DEFAULT_MAX_QUEUE_SIZE).maxBatchSize(DEFAULT_MAX_BATCH_SIZE)
-                    .loggingContextSupplier(() -> LoggingContext.forConnector("a", "b", "c"))
-                    .maxQueueSizeInBytes(DEFAULT_MAX_QUEUE_SIZE_IN_BYTES).build();
+            Properties props = new Properties();
+            props.put(CommonConnectorConfig.MAX_BATCH_SIZE, DEFAULT_MAX_BATCH_SIZE);
+            props.put(CommonConnectorConfig.MAX_QUEUE_SIZE, DEFAULT_MAX_QUEUE_SIZE);
+            props.put(CommonConnectorConfig.POLL_INTERVAL_MS, pollIntervalMillis);
+            props.put(CommonConnectorConfig.MAX_QUEUE_SIZE_IN_BYTES, DEFAULT_MAX_QUEUE_SIZE_IN_BYTES);
+
+            changeEventQueue = new DefaultChangeEventQueue<>(Configuration.from(props), () -> LoggingContext.forConnector("a", "b", "c"));
         }
 
         @Setup(Level.Invocation)

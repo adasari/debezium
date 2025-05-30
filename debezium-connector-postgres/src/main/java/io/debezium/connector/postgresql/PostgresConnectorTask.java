@@ -14,6 +14,7 @@ import java.util.Map;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
 
+import io.debezium.connector.base.DefaultChangeEventQueue;
 import org.apache.kafka.clients.producer.RecordMetadata;
 import org.apache.kafka.connect.errors.ConnectException;
 import org.apache.kafka.connect.errors.RetriableException;
@@ -168,13 +169,7 @@ public class PostgresConnectorTask extends BaseSourceTask<PostgresPartition, Pos
                 throw new DebeziumException(e);
             }
 
-            queue = new ChangeEventQueue.Builder<DataChangeEvent>()
-                    .pollInterval(connectorConfig.getPollInterval())
-                    .maxBatchSize(connectorConfig.getMaxBatchSize())
-                    .maxQueueSize(connectorConfig.getMaxQueueSize())
-                    .maxQueueSizeInBytes(connectorConfig.getMaxQueueSizeInBytes())
-                    .loggingContextSupplier(() -> taskContext.configureLoggingContext(CONTEXT_NAME))
-                    .build();
+            queue = new DefaultChangeEventQueue<>(connectorConfig.getConfig(), () -> taskContext.configureLoggingContext(CONTEXT_NAME));
 
             errorHandler = new PostgresErrorHandler(connectorConfig, queue, errorHandler);
 

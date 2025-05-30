@@ -7,6 +7,8 @@ package io.debezium.connector.postgresql;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.debezium.connector.base.DefaultChangeEventQueue;
+import io.debezium.util.LoggingContext;
 import org.junit.Test;
 import org.postgresql.util.PSQLException;
 import org.postgresql.util.PSQLState;
@@ -24,7 +26,7 @@ public class PostgresErrorHandlerTest {
             new PostgresConnectorConfig(Configuration.create()
                     .with(CommonConnectorConfig.TOPIC_PREFIX, "postgres")
                     .build()),
-            new ChangeEventQueue.Builder<DataChangeEvent>().build(), null);
+            new DefaultChangeEventQueue<>(Configuration.create().build(), () -> LoggingContext.forConnector("a", "b", "c")), null);
 
     @Test
     public void classifiedPSQLExceptionIsRetryable() {

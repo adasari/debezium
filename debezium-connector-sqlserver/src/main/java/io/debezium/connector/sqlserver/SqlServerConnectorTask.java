@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+import io.debezium.connector.base.DefaultChangeEventQueue;
 import org.apache.kafka.connect.source.SourceRecord;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -112,13 +113,7 @@ public class SqlServerConnectorTask extends BaseSourceTask<SqlServerPartition, S
         taskContext = new SqlServerTaskContext(connectorConfig, schema);
 
         // Set up the task record queue ...
-        this.queue = new ChangeEventQueue.Builder<DataChangeEvent>()
-                .pollInterval(connectorConfig.getPollInterval())
-                .maxBatchSize(connectorConfig.getMaxBatchSize())
-                .maxQueueSize(connectorConfig.getMaxQueueSize())
-                .maxQueueSizeInBytes(connectorConfig.getMaxQueueSizeInBytes())
-                .loggingContextSupplier(() -> taskContext.configureLoggingContext(CONTEXT_NAME))
-                .build();
+        this.queue = new DefaultChangeEventQueue<>(connectorConfig.getConfig(), () -> taskContext.configureLoggingContext(CONTEXT_NAME));
 
         errorHandler = new SqlServerErrorHandler(connectorConfig, queue, errorHandler);
 

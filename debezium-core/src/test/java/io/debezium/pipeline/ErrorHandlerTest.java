@@ -5,12 +5,15 @@
  */
 package io.debezium.pipeline;
 
+import static io.debezium.config.CommonConnectorConfig.*;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.IOException;
 import java.time.Duration;
 import java.util.Optional;
+import java.util.Properties;
 
+import io.debezium.connector.base.DefaultChangeEventQueue;
 import org.apache.kafka.connect.errors.ConnectException;
 import org.apache.kafka.connect.errors.RetriableException;
 import org.apache.kafka.connect.source.SourceConnector;
@@ -211,12 +214,12 @@ public class ErrorHandlerTest {
     }
 
     private ChangeEventQueue<DataChangeEvent> queue() {
-        final ChangeEventQueue<DataChangeEvent> queue = new ChangeEventQueue.Builder<DataChangeEvent>()
-                .pollInterval(Duration.ofMillis(1))
-                .maxBatchSize(1000)
-                .maxQueueSize(1000)
-                .loggingContextSupplier(() -> LoggingContext.forConnector("test", "test", "test"))
-                .build();
-        return queue;
+        Properties props = new Properties();
+        props.put(CommonConnectorConfig.MAX_BATCH_SIZE, 1000);
+        props.put(CommonConnectorConfig.MAX_QUEUE_SIZE, 1000);
+        props.put(CommonConnectorConfig.POLL_INTERVAL_MS, 1);
+
+        return new DefaultChangeEventQueue<>(Configuration.from(props),
+                () -> LoggingContext.forConnector("test", "test", "test"));
     }
 }
